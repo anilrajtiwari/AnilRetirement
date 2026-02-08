@@ -8,7 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.set_page_config(page_title="Retirement Simulator", layout="wide")
 st.title("PSU Retirement Planning Simulator")
 st.caption("Three-Bucket Strategy | Training & Capacity Building Tool")
 
