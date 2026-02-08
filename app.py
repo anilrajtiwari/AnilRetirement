@@ -5,8 +5,8 @@ from io import BytesIO
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="Anil Retirement Simulator", layout="wide")
-st.title("Anil Retirement Planning Simulator")
+st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.title("PSU Retirement Planning Simulator")
 st.caption("Three-Bucket Strategy | Educational & Capacity Building Tool")
 
 # ---------------------------------
@@ -14,40 +14,77 @@ st.caption("Three-Bucket Strategy | Educational & Capacity Building Tool")
 # ---------------------------------
 st.sidebar.header("Employee Inputs")
 
-current_age = st.sidebar.number_input("Current Age", 40, 59, 55)
-retirement_age = st.sidebar.number_input("Retirement Age", 55, 65, 60)
-life_expectancy = st.sidebar.number_input("Life Expectancy", 70, 100, 85)
+current_age = st.sidebar.number_input(
+    "Current Age", min_value=30, value=55, step=1
+)
+
+retirement_age = st.sidebar.number_input(
+    "Retirement Age", min_value=current_age + 1, value=60, step=1
+)
+
+life_expectancy = st.sidebar.number_input(
+    "Life Expectancy", min_value=retirement_age + 1, value=85, step=1
+)
 
 monthly_expense_today = st.sidebar.number_input(
-    "Current Monthly Expense (₹)", 10000, 300000, 75000
+    "Current Monthly Expense (₹)",
+    min_value=0,
+    value=75000,
+    step=5000
 )
 
 inflation = st.sidebar.slider(
-    "Expected Inflation Rate (%)", 3.0, 10.0, 6.0
+    "Expected Inflation Rate (%)", 3.0, 12.0, 6.0
 ) / 100
 
 monthly_pension = st.sidebar.number_input(
-    "Monthly Assured Pension (₹)", 0, 200000, 40000
+    "Monthly Assured Pension (₹)",
+    min_value=0,
+    value=40000,
+    step=5000
 )
 
 total_corpus = st.sidebar.number_input(
-    "Total Retirement Corpus (₹)", 1000000, 50000000, 11000000
+    "Total Retirement Corpus (₹)",
+    min_value=0,
+    value=11000000,
+    step=500000
 )
 
 st.sidebar.subheader("Bucket Structure")
-bucket1_years = st.sidebar.slider("Bucket 1 Duration (years)", 1, 5, 3)
-bucket2_years = st.sidebar.slider("Bucket 2 Duration (years)", 3, 10, 7)
 
-r1 = st.sidebar.slider("Bucket 1 Return (%)", 2.0, 7.0, 4.0) / 100
-r2 = st.sidebar.slider("Bucket 2 Return (%)", 4.0, 9.0, 6.5) / 100
-r3 = st.sidebar.slider("Bucket 3 Return (%)", 7.0, 12.0, 9.5) / 100
+bucket1_years = st.sidebar.slider(
+    "Bucket 1 Duration (years)", 1, 6, 3
+)
+
+bucket2_years = st.sidebar.slider(
+    "Bucket 2 Duration (years)", 3, 12, 7
+)
+
+r1 = st.sidebar.slider(
+    "Bucket 1 Return (%)", 2.0, 7.0, 4.0
+) / 100
+
+r2 = st.sidebar.slider(
+    "Bucket 2 Return (%)", 4.0, 9.0, 6.5
+) / 100
+
+r3 = st.sidebar.slider(
+    "Bucket 3 Return (%)", 7.0, 14.0, 9.5
+) / 100
 
 # ---------------------------------
 # SCENARIO TOGGLES
 # ---------------------------------
 st.sidebar.subheader("Stress Test Scenarios")
-market_crash = st.sidebar.checkbox("One-time Market Crash (Year 1)")
-inflation_shock = st.sidebar.checkbox("High Inflation (First 5 Years)")
+
+market_crash = st.sidebar.checkbox(
+    "One-time Market Crash (30% in Year 1)"
+)
+
+inflation_shock = st.sidebar.checkbox(
+    "High Inflation (+4%) in First 5 Years After Retirement"
+)
 
 run = st.sidebar.button("Run Simulation")
 
@@ -56,11 +93,10 @@ run = st.sidebar.button("Run Simulation")
 # ---------------------------------
 if run:
 
-    # ---------------------------------
-    # PRE-RETIREMENT INFLATION ADJUSTMENT
-    # ---------------------------------
+    # Years to retirement
     years_to_retirement = retirement_age - current_age
 
+    # Monthly expense at retirement (inflation adjusted)
     monthly_expense_at_retirement = (
         monthly_expense_today * ((1 + inflation) ** years_to_retirement)
     )
@@ -89,7 +125,7 @@ if run:
     )
 
     # ---------------------------------
-    # ANNUALISE FOR SIMULATION
+    # ANNUALISE VALUES
     # ---------------------------------
     annual_expense_start = monthly_expense_at_retirement * 12
     annual_pension = monthly_pension * 12
@@ -107,12 +143,12 @@ if run:
     b1, b2, b3 = bucket1, bucket2, bucket3
 
     crash_year = 1
-    crash_impact = 0.30  # 30% one-time fall
+    crash_impact = 0.30
 
     records = []
 
     # ---------------------------------
-    # YEAR-BY-YEAR RETIREMENT SIMULATION
+    # YEAR-BY-YEAR SIMULATION
     # ---------------------------------
     for year in range(1, retirement_years + 1):
 
@@ -122,12 +158,12 @@ if run:
         annual_expense = annual_expense_start * ((1 + infl) ** (year - 1))
         annual_gap = max(0, annual_expense - annual_pension)
 
-        # Withdraw from Bucket 1
+        # Withdrawals from Bucket 1
         withdrawal = min(b1, annual_gap)
         b1 -= withdrawal
         annual_gap -= withdrawal
 
-        # Refill rules
+        # Refill logic
         if b1 <= 0 and b2 > 0:
             refill = min(b2, base_annual_gap * bucket1_years)
             b2 -= refill
@@ -171,29 +207,26 @@ if run:
     )
 
     # ---------------------------------
-    # OUTPUT TABLE
+    # OUTPUTS
     # ---------------------------------
-    st.subheader("Post-Retirement Monthly Expense & Corpus Evolution")
+    st.subheader("Post-Retirement Expense & Corpus Evolution")
     st.dataframe(df, use_container_width=True)
 
-    # ---------------------------------
-    # GRAPHS (CLEAR & CORRECT)
-    # ---------------------------------
     st.subheader("Bucket-wise Balances Over Time")
     st.line_chart(
         df.set_index("Age")[["Bucket 1", "Bucket 2", "Bucket 3"]]
     )
 
-    st.subheader("Inflation-Adjusted Monthly Expense After Retirement")
+    st.subheader("Inflation-Adjusted Monthly Expense Over Retirement")
     st.line_chart(
         df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]]
     )
 
     # ---------------------------------
-    # RESULT MESSAGE
+    # FINAL RESULT
     # ---------------------------------
     if df["Total Corpus"].iloc[-1] > 0:
-        st.success("✅ Retirement corpus lasts through the full retirement period.")
+        st.success("✅ Retirement corpus lasts through full retirement period.")
     else:
         st.error(
             f"❌ Corpus exhausted at age {df['Age'].iloc[-1]}."
@@ -214,6 +247,5 @@ if run:
     )
 
 st.caption(
-    "Disclaimer: This tool is for education and capacity building only. "
-    "It does not constitute financial advice."
+    "Disclaimer: For education & capacity building only. Not financial advice."
 )
