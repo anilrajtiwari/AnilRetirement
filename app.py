@@ -5,8 +5,8 @@ from io import BytesIO
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="Anil Retirement Simulator", layout="wide")
-st.title("Anil Retirement Planning Simulator")
+st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.title("PSU Retirement Planning Simulator")
 st.caption("Three-Bucket Strategy | Educational & Capacity Building Tool")
 
 # ---------------------------------
@@ -14,72 +14,40 @@ st.caption("Three-Bucket Strategy | Educational & Capacity Building Tool")
 # ---------------------------------
 st.sidebar.header("Employee Inputs")
 
-current_age = st.sidebar.number_input(
-    "Current Age", min_value=30, value=55, step=1
-)
-
-retirement_age = st.sidebar.number_input(
-    "Retirement Age", min_value=current_age + 1, value=60, step=1
-)
-
-life_expectancy = st.sidebar.number_input(
-    "Life Expectancy", min_value=retirement_age + 1, value=85, step=1
-)
+current_age = st.sidebar.number_input("Current Age", min_value=30, value=55, step=1)
+retirement_age = st.sidebar.number_input("Retirement Age", min_value=current_age + 1, value=60, step=1)
+life_expectancy = st.sidebar.number_input("Life Expectancy", min_value=retirement_age + 1, value=85, step=1)
 
 monthly_expense_today = st.sidebar.number_input(
-    "Current Monthly Expense (₹)",
-    min_value=0,
-    value=75000,
-    step=5000
+    "Current Monthly Expense (₹)", min_value=0, value=75000, step=5000
 )
 
-inflation = st.sidebar.slider(
-    "Expected Inflation Rate (%)", 3.0, 12.0, 6.0
-) / 100
+inflation = st.sidebar.slider("Expected Inflation Rate (%)", 3.0, 12.0, 6.0) / 100
 
 monthly_pension = st.sidebar.number_input(
-    "Monthly Assured Pension (₹)",
-    min_value=0,
-    value=40000,
-    step=5000
+    "Monthly Assured Pension (₹)", min_value=0, value=40000, step=5000
 )
 
 total_corpus = st.sidebar.number_input(
-    "Total Retirement Corpus (₹)",
-    min_value=0,
-    value=11000000,
-    step=500000
+    "Total Retirement Corpus (₹)", min_value=0, value=11000000, step=500000
 )
 
 st.sidebar.subheader("Bucket Structure")
+bucket1_years = st.sidebar.slider("Bucket 1 Duration (years)", 1, 6, 3)
+bucket2_years = st.sidebar.slider("Bucket 2 Duration (years)", 3, 12, 7)
 
-bucket1_years = st.sidebar.slider(
-    "Bucket 1 Duration (years)", 1, 6, 3
-)
-
-bucket2_years = st.sidebar.slider(
-    "Bucket 2 Duration (years)", 3, 12, 7
-)
-
-r1 = st.sidebar.slider(
-    "Bucket 1 Return (%)", 2.0, 7.0, 4.0
-) / 100
-
-r2 = st.sidebar.slider(
-    "Bucket 2 Return (%)", 4.0, 9.0, 6.5
-) / 100
-
-r3 = st.sidebar.slider(
-    "Bucket 3 Return (%)", 7.0, 14.0, 9.5
-) / 100
+r1 = st.sidebar.slider("Bucket 1 Return (%)", 2.0, 7.0, 4.0) / 100
+r2 = st.sidebar.slider("Bucket 2 Return (%)", 4.0, 9.0, 6.5) / 100
+r3 = st.sidebar.slider("Bucket 3 Return (%)", 7.0, 14.0, 9.5) / 100
 
 # ---------------------------------
 # SCENARIO TOGGLES
 # ---------------------------------
 st.sidebar.subheader("Stress Test Scenarios")
 
-market_crash = st.sidebar.checkbox(
-    "One-time Market Crash (30% in Year 1)"
+crash_duration = st.sidebar.selectbox(
+    "Market Crash Duration (Growth Assets)",
+    options=["No Crash", "3 Years", "5 Years"]
 )
 
 inflation_shock = st.sidebar.checkbox(
@@ -93,10 +61,8 @@ run = st.sidebar.button("Run Simulation")
 # ---------------------------------
 if run:
 
-    # Years to retirement
     years_to_retirement = retirement_age - current_age
 
-    # Monthly expense at retirement (inflation adjusted)
     monthly_expense_at_retirement = (
         monthly_expense_today * ((1 + inflation) ** years_to_retirement)
     )
@@ -106,27 +72,15 @@ if run:
     )
 
     # ---------------------------------
-    # DISPLAY RETIREMENT TRANSITION
+    # RETIREMENT START DISPLAY
     # ---------------------------------
     st.subheader(f"At the Time of Retirement (Age {retirement_age})")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric(
-        "Monthly Expense at Retirement (₹)",
-        f"{monthly_expense_at_retirement:,.0f}"
-    )
-    c2.metric(
-        "Monthly Pension (₹)",
-        f"{monthly_pension:,.0f}"
-    )
-    c3.metric(
-        "Monthly Income Gap (₹)",
-        f"{monthly_gap_at_retirement:,.0f}"
-    )
+    c1.metric("Monthly Expense at Retirement (₹)", f"{monthly_expense_at_retirement:,.0f}")
+    c2.metric("Monthly Pension (₹)", f"{monthly_pension:,.0f}")
+    c3.metric("Monthly Income Gap (₹)", f"{monthly_gap_at_retirement:,.0f}")
 
-    # ---------------------------------
-    # ANNUALISE VALUES
-    # ---------------------------------
     annual_expense_start = monthly_expense_at_retirement * 12
     annual_pension = monthly_pension * 12
     base_annual_gap = max(0, annual_expense_start - annual_pension)
@@ -142,8 +96,14 @@ if run:
 
     b1, b2, b3 = bucket1, bucket2, bucket3
 
-    crash_year = 1
-    crash_impact = 0.30
+    # Market crash parameters
+    crash_years = 0
+    if crash_duration == "3 Years":
+        crash_years = 3
+    elif crash_duration == "5 Years":
+        crash_years = 5
+
+    annual_crash_impact = 0.15  # 15% fall per year (realistic prolonged bear market)
 
     records = []
 
@@ -154,7 +114,6 @@ if run:
 
         # Inflation after retirement
         infl = inflation + 0.04 if inflation_shock and year <= 5 else inflation
-
         annual_expense = annual_expense_start * ((1 + infl) ** (year - 1))
         annual_gap = max(0, annual_expense - annual_pension)
 
@@ -174,9 +133,9 @@ if run:
             b3 -= refill
             b2 += refill
 
-        # Market crash (one-time)
-        if market_crash and year == crash_year:
-            b3 *= (1 - crash_impact)
+        # MARKET CRASH LOGIC (MULTI-YEAR)
+        if year <= crash_years:
+            b3 *= (1 - annual_crash_impact)
 
         # Apply returns
         b1 *= (1 + r1)
@@ -213,24 +172,15 @@ if run:
     st.dataframe(df, use_container_width=True)
 
     st.subheader("Bucket-wise Balances Over Time")
-    st.line_chart(
-        df.set_index("Age")[["Bucket 1", "Bucket 2", "Bucket 3"]]
-    )
+    st.line_chart(df.set_index("Age")[["Bucket 1", "Bucket 2", "Bucket 3"]])
 
     st.subheader("Inflation-Adjusted Monthly Expense Over Retirement")
-    st.line_chart(
-        df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]]
-    )
+    st.line_chart(df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]])
 
-    # ---------------------------------
-    # FINAL RESULT
-    # ---------------------------------
     if df["Total Corpus"].iloc[-1] > 0:
         st.success("✅ Retirement corpus lasts through full retirement period.")
     else:
-        st.error(
-            f"❌ Corpus exhausted at age {df['Age'].iloc[-1]}."
-        )
+        st.error(f"❌ Corpus exhausted at age {df['Age'].iloc[-1]}.")
 
     # ---------------------------------
     # DOWNLOAD EXCEL
@@ -246,6 +196,4 @@ if run:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-st.caption(
-    "Disclaimer: For education & capacity building only. Not financial advice."
-)
+st.caption("Disclaimer: For education & capacity building only. Not financial advice.")
