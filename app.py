@@ -1,16 +1,13 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table
-from reportlab.lib.styles import getSampleStyleSheet
 
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="Retirement Simulator", layout="wide")
+st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
 st.title("PSU Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | Training & Capacity Building Tool")
+st.caption("Three-Bucket Strategy | Educational & Training Tool")
 
 # ---------------------------------
 # SIDEBAR INPUTS
@@ -22,9 +19,9 @@ retirement_age = st.sidebar.number_input("Retirement Age", 55, 65, 60)
 life_expectancy = st.sidebar.number_input("Life Expectancy", 70, 100, 85)
 
 monthly_expense = st.sidebar.number_input("Current Monthly Expense (₹)", 10000, 300000, 75000)
-inflation = st.sidebar.slider("Normal Inflation Rate (%)", 3.0, 10.0, 6.0) / 100
+inflation = st.sidebar.slider("Inflation Rate (%)", 3.0, 10.0, 6.0) / 100
 
-monthly_pension = st.sidebar.number_input("Monthly Pension (₹)", 0, 200000, 40000)
+monthly_pension = st.sidebar.number_input("Monthly Assured Pension (₹)", 0, 200000, 40000)
 total_corpus = st.sidebar.number_input("Total Retirement Corpus (₹)", 1000000, 50000000, 11000000)
 
 st.sidebar.subheader("Bucket Structure")
@@ -39,11 +36,10 @@ r3 = st.sidebar.slider("Bucket 3 Return (%)", 7.0, 12.0, 9.5) / 100
 # SCENARIO TOGGLES
 # ---------------------------------
 st.sidebar.subheader("Stress Test Scenarios")
+market_crash = st.sidebar.checkbox("One-time Market Crash (Year 1)")
+inflation_shock = st.sidebar.checkbox("High Inflation (First 5 Years)")
 
-market_crash = st.sidebar.checkbox("Market Crash in First 2 Years")
-inflation_shock = st.sidebar.checkbox("High Inflation Shock")
-
-run = st.sidebar.button("Run Retirement Model")
+run = st.sidebar.button("Run Simulation")
 
 # ---------------------------------
 # MAIN LOGIC
@@ -51,33 +47,35 @@ run = st.sidebar.button("Run Retirement Model")
 if run:
     retirement_years = life_expectancy - retirement_age
 
-    base_annual_expense = monthly_expense * 12
+    base_expense = monthly_expense * 12
     annual_pension = monthly_pension * 12
-    base_gap = max(0, base_annual_expense - annual_pension)
+    base_gap = max(0, base_expense - annual_pension)
 
+    # Initial buckets
     bucket1 = base_gap * bucket1_years
     bucket2 = base_gap * bucket2_years
     bucket3 = total_corpus - (bucket1 + bucket2)
 
-    records = []
     b1, b2, b3 = bucket1, bucket2, bucket3
+
+    crash_year = 1
+    crash_impact = 0.30  # 30% one-time fall
+
+    records = []
 
     for year in range(1, retirement_years + 1):
 
-        # Inflation shock logic
-        if inflation_shock and year <= 5:
-            infl = inflation + 0.04
-        else:
-            infl = inflation
-
-        expense = base_annual_expense * ((1 + infl) ** (year - 1))
+        # Inflation logic
+        infl = inflation + 0.04 if inflation_shock and year <= 5 else inflation
+        expense = base_expense * ((1 + infl) ** (year - 1))
         gap = max(0, expense - annual_pension)
 
-        # Withdrawals
-        withdraw = min(b1, gap)
-        b1 -= withdraw
-        gap -= withdraw
+        # Withdrawals only from Bucket 1
+        withdrawal = min(b1, gap)
+        b1 -= withdrawal
+        gap -= withdrawal
 
+        # Refill rules
         if b1 <= 0 and b2 > 0:
             refill = min(b2, base_gap * bucket1_years)
             b2 -= refill
@@ -88,20 +86,22 @@ if run:
             b3 -= refill
             b2 += refill
 
-        # Market crash logic
-        if market_crash and year <= 2:
-            b3 *= 0.75  # 25% crash
+        # Market crash (ONE TIME)
+        if market_crash and year == crash_year:
+            b3 *= (1 - crash_impact)
 
         # Apply returns
         b1 *= (1 + r1)
         b2 *= (1 + r2)
         b3 *= (1 + r3)
 
-        total_balance = b1 + b2 + b3
+        total = b1 + b2 + b3
 
-        records.append([year, expense, b1, b2, b3, total_balance])
+        records.append([
+            year, expense, b1, b2, b3, total
+        ])
 
-        if total_balance <= 0:
+        if total <= 0:
             break
 
     df = pd.DataFrame(
@@ -110,59 +110,45 @@ if run:
     )
 
     # ---------------------------------
-    # DISPLAY
+    # OUTPUTS
     # ---------------------------------
-    st.subheader("Simulation Results")
+    st.subheader("Year-wise Simulation")
     st.dataframe(df, use_container_width=True)
 
-    st.subheader("Corpus Trend")
-    st.area_chart(df.set_index("Year")[["Bucket 1", "Bucket 2", "Bucket 3"]])
-    st.line_chart(df.set_index("Year")["Total Corpus"])
+    # ---------------------------------
+    # CORRECT GRAPHS (FIXED)
+    # ---------------------------------
+    st.subheader("Bucket-wise Balances Over Time")
 
+    st.line_chart(
+        df.set_index("Year")[["Bucket 1", "Bucket 2", "Bucket 3"]]
+    )
+
+    st.subheader("Total Retirement Corpus")
+    st.line_chart(
+        df.set_index("Year")[["Total Corpus"]]
+    )
+
+    # ---------------------------------
+    # RESULT MESSAGE
+    # ---------------------------------
     if df["Total Corpus"].iloc[-1] > 0:
-        st.success("✅ Corpus survives full retirement period")
+        st.success("✅ Corpus lasts for full retirement period")
     else:
-        st.error(f"❌ Corpus exhausted in year {df['Year'].iloc[-1]}")
+        st.error(f"❌ Corpus exhausted in Year {df['Year'].iloc[-1]}")
 
     # ---------------------------------
     # DOWNLOAD EXCEL
     # ---------------------------------
-    excel_buffer = BytesIO()
-    df.to_excel(excel_buffer, index=False)
-    excel_buffer.seek(0)
+    buffer = BytesIO()
+    df.to_excel(buffer, index=False)
+    buffer.seek(0)
 
     st.download_button(
-        label="⬇ Download Excel Report",
-        data=excel_buffer,
-        file_name="Retirement_Simulation.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "⬇ Download Excel Report",
+        buffer,
+        "Retirement_Simulation.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # ---------------------------------
-    # DOWNLOAD PDF
-    # ---------------------------------
-    pdf_buffer = BytesIO()
-    doc = SimpleDocTemplate(pdf_buffer)
-    styles = getSampleStyleSheet()
-
-    content = [
-        Paragraph("<b>PSU Retirement Simulation Report</b>", styles["Title"]),
-        Paragraph(f"Total Corpus: ₹ {total_corpus:,.0f}", styles["Normal"]),
-        Paragraph(f"Market Crash Scenario: {'Yes' if market_crash else 'No'}", styles["Normal"]),
-        Paragraph(f"Inflation Shock Scenario: {'Yes' if inflation_shock else 'No'}", styles["Normal"]),
-    ]
-
-    table_data = [df.columns.tolist()] + df.values.tolist()
-    content.append(Table(table_data))
-
-    doc.build(content)
-    pdf_buffer.seek(0)
-
-    st.download_button(
-        label="⬇ Download PDF Report",
-        data=pdf_buffer,
-        file_name="Retirement_Simulation.pdf",
-        mime="application/pdf"
-    )
-
-st.caption("Disclaimer: Educational use only. Not financial advice.")
+st.caption("Disclaimer: For education & capacity building only. Not financial advice.")
