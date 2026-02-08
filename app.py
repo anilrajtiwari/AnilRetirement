@@ -5,7 +5,7 @@ from io import BytesIO
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.set_page_config(page_title="Anil Retirement Simulator", layout="wide")
 st.title("PSU Retirement Planning Simulator")
 st.caption("Three-Bucket Strategy | Educational & Training Tool")
 
