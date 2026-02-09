@@ -29,7 +29,7 @@ monthly_pension = st.sidebar.number_input(
 )
 
 total_corpus = st.sidebar.number_input(
-    "Total Retirement Corpus (₹)", 0, 50000000, 11000000, step=500000
+    "Total Retirement Corpus (₹)", 0, 100000000, 11000000, step=500000
 )
 
 st.sidebar.subheader("Expected Returns")
@@ -61,7 +61,7 @@ if run:
     c3.metric("Monthly Income Gap (₹)", f"{max(0, monthly_expense_retirement - monthly_pension):,.0f}")
 
     # ---------------------------------
-    # FIXED BUCKET ALLOCATION
+    # BUCKET ALLOCATION
     # ---------------------------------
     b1 = total_corpus * 0.20
     b2 = total_corpus * 0.30
@@ -85,7 +85,7 @@ if run:
         annual_expense = annual_expense_base * ((1 + infl) ** (year - 1))
         annual_gap = max(0, annual_expense - annual_pension)
 
-        # Withdraw once
+        # Withdrawals
         withdraw = min(b1, annual_gap)
         b1 -= withdraw
         annual_gap -= withdraw
@@ -93,18 +93,18 @@ if run:
         if annual_gap > 0 and b2 > 0:
             refill = min(b2, annual_gap)
             b2 -= refill
-            b1 += refill
             annual_gap -= refill
 
         if annual_gap > 0 and b3 > 0:
             refill = min(b3, annual_gap)
             b3 -= refill
-            b1 += refill
             annual_gap -= refill
 
+        # Market crash
         if year <= crash_duration:
             b3 *= (1 - crash_impact)
 
+        # Growth
         b1 *= (1 + r1)
         b2 *= (1 + r2)
         b3 *= (1 + r3)
@@ -141,10 +141,12 @@ if run:
         status = "RED"
 
     # ---------------------------------
-    # AUTO RECOMMENDATIONS
+    # RECOMMENDATION LOGIC (DEFENSIVE)
     # ---------------------------------
-    avg_annual_gap = df["Monthly Expense (Inflation Adjusted)"].mean() * 12 - annual_pension
-    avg_annual_gap = max(0, avg_annual_gap)
+    avg_annual_gap = max(
+        0,
+        (df["Monthly Expense (Inflation Adjusted)"].mean() * 12) - annual_pension
+    )
 
     additional_corpus_needed = 0
     if exhaustion_age:
@@ -159,13 +161,13 @@ if run:
     if status == "GREEN":
         st.success("🟢 Retirement plan is sustainable till life expectancy.")
     elif status == "AMBER":
-        st.warning("🟠 Retirement plan is marginally sufficient. Minor corrections advised.")
+        st.warning("🟠 Retirement plan is marginally sufficient.")
     else:
         st.error("🔴 Retirement plan is NOT sustainable under current assumptions.")
 
     st.markdown(f"""
 **Summary**
-- Life Expectancy Considered: **{life_expectancy}**
+- Life Expectancy: **{life_expectancy}**
 - Corpus Exhaustion Age: **{exhaustion_age if exhaustion_age else 'Not Exhausted'}**
 - Retirement Health Score: **{status}**
 """)
@@ -173,18 +175,18 @@ if run:
     if status != "GREEN":
         st.markdown("### What Went Wrong")
         st.markdown("""
-- Expenses increase every year due to inflation while pension remains fixed  
-- Income gap widens significantly in later years  
-- Early withdrawals reduce compounding potential  
-- Initial corpus is insufficient for long retirement duration  
+- Retirement expenses grow every year due to inflation  
+- Pension income remains fixed and loses purchasing power  
+- Corpus is drawn down faster in early retirement  
+- Market shocks reduce compounding potential  
 """)
 
-        st.markdown("### How to Improve")
+        st.markdown("### What You Can Do")
         st.markdown(f"""
-- Increase retirement corpus by approximately **₹{additional_corpus_needed:,.0f}**
-- Consider delaying retirement by 1–3 years  
-- Control discretionary expenses in early retirement  
-- Add inflation-protected income sources  
+- Increase retirement corpus by **~₹{additional_corpus_needed:,.0f}**  
+- Delay retirement by 1–3 years to boost corpus and reduce drawdown  
+- Reduce early retirement expenses  
+- Add inflation-linked income sources  
 """)
 
     # ---------------------------------
@@ -200,10 +202,10 @@ if run:
     st.line_chart(df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]])
 
     # ---------------------------------
-    # EXCEL DOWNLOAD (WITH ANALYSIS)
+    # EXCEL DOWNLOAD (FIXED ENGINE)
     # ---------------------------------
     output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="Projection", index=False)
 
         analysis_df = pd.DataFrame({
