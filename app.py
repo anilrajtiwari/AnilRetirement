@@ -7,7 +7,7 @@ from io import BytesIO
 # ---------------------------------
 st.set_page_config(page_title="Anil's Retirement Simulator", layout="wide")
 st.title("Anil's Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | 3-Year Scheduled Refill Model")
+st.caption("Three-Bucket Strategy | Strict 3-Year Refill Discipline")
 
 # ---------------------------------
 # INPUTS
@@ -73,9 +73,6 @@ if run:
         b2 = remaining * 0.50
         b3 = remaining * 0.50
 
-    # ---------------------------------
-    # STRESS SETTINGS
-    # ---------------------------------
     crash_duration = 3 if crash_years == "3 Years" else 5 if crash_years == "5 Years" else 0
     crash_impact = 0.15
 
@@ -92,7 +89,9 @@ if run:
         annual_expense = annual_expense_base * ((1 + infl) ** (year - 1))
         annual_gap = max(0, annual_expense - annual_pension)
 
-        # Withdraw expenses
+        # ---------------------------------
+        # EXPENSE WITHDRAWAL (STRICT)
+        # ---------------------------------
         withdraw = min(b1, annual_gap)
         b1 -= withdraw
         annual_gap -= withdraw
@@ -102,33 +101,35 @@ if run:
             b2 -= used
             annual_gap -= used
 
-        if annual_gap > 0 and b3 > 0:
-            used = min(b3, annual_gap)
-            b3 -= used
-            annual_gap -= used
+        # ❌ Bucket 3 NEVER used for expenses
 
         # ---------------------------------
         # SCHEDULED REFILL EVERY 3 YEARS
         # ---------------------------------
         if year % 3 == 0:
-            # Refill Bucket 1 from Bucket 2
+
+            # Refill Bucket 1 ONLY from Bucket 2
             refill_b1 = max(0, bucket1_target - b1)
             from_b2 = min(b2, refill_b1)
             b2 -= from_b2
             b1 += from_b2
 
-            # Refill Bucket 2 from Bucket 3
+            # Refill Bucket 2 ONLY from Bucket 3
             target_b2 = (total_corpus - bucket1_target) * 0.50
             refill_b2 = max(0, target_b2 - b2)
             from_b3 = min(b3, refill_b2)
             b3 -= from_b3
             b2 += from_b3
 
-        # Market crash impact
+        # ---------------------------------
+        # MARKET CRASH (ONLY BUCKET 3)
+        # ---------------------------------
         if year <= crash_duration:
             b3 *= (1 - crash_impact)
 
-        # Growth
+        # ---------------------------------
+        # ANNUAL RETURNS
+        # ---------------------------------
         b1 *= (1 + r1)
         b2 *= (1 + r2)
         b3 *= (1 + r3)
