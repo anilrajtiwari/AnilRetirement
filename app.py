@@ -5,9 +5,9 @@ from io import BytesIO
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="Anil's Retirement Simulator", layout="wide")
-st.title("Anil's Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | Corrected, Stress-Tested & Audit-Safe")
+st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.title("PSU Retirement Planning Simulator")
+st.caption("Three-Bucket Strategy | 3-Year Scheduled Refill Model")
 
 # ---------------------------------
 # INPUTS
@@ -41,17 +41,6 @@ st.sidebar.subheader("Stress Scenarios")
 crash_years = st.sidebar.selectbox("Market Crash Duration", ["No Crash", "3 Years", "5 Years"])
 inflation_shock = st.sidebar.checkbox("High Inflation (+4%) for First 5 Years After Retirement")
 
-st.sidebar.subheader("Bucket Strategy Options")
-enable_rebalancing = st.sidebar.checkbox(
-    "Enable True Bucket Rebalancing (Cash Refill)", value=False
-)
-
-cash_buffer_years = st.sidebar.slider(
-    "Cash Buffer Target (Years of Expense)",
-    1, 5, 3,
-    disabled=not enable_rebalancing
-)
-
 run = st.sidebar.button("Run Simulation")
 
 # ---------------------------------
@@ -65,8 +54,6 @@ if run:
     annual_expense_base = monthly_expense_retirement * 12
     annual_pension = monthly_pension * 12
 
-    target_cash = annual_expense_base * cash_buffer_years
-
     st.subheader(f"At Retirement (Age {retirement_age})")
     c1, c2, c3 = st.columns(3)
     c1.metric("Monthly Expense (₹)", f"{monthly_expense_retirement:,.0f}")
@@ -74,62 +61,70 @@ if run:
     c3.metric("Monthly Income Gap (₹)", f"{max(0, monthly_expense_retirement - monthly_pension):,.0f}")
 
     # ---------------------------------
-    # BUCKET ALLOCATION
+    # INITIAL BUCKET SETUP
     # ---------------------------------
-    b1 = total_corpus * 0.20
-    b2 = total_corpus * 0.30
-    b3 = total_corpus * 0.50
+    bucket1_target = annual_expense_base * 3
 
-    crash_duration = 0
-    if crash_years == "3 Years":
-        crash_duration = 3
-    elif crash_years == "5 Years":
-        crash_duration = 5
+    if total_corpus <= bucket1_target:
+        b1, b2, b3 = total_corpus, 0, 0
+    else:
+        b1 = bucket1_target
+        remaining = total_corpus - bucket1_target
+        b2 = remaining * 0.50
+        b3 = remaining * 0.50
 
+    # ---------------------------------
+    # STRESS SETTINGS
+    # ---------------------------------
+    crash_duration = 3 if crash_years == "3 Years" else 5 if crash_years == "5 Years" else 0
     crash_impact = 0.15
-    retirement_years = life_expectancy - retirement_age
 
+    retirement_years = life_expectancy - retirement_age
     records = []
     exhaustion_age = None
-    exhaustion_age_no_rebal = None
 
+    # ---------------------------------
+    # SIMULATION LOOP
+    # ---------------------------------
     for year in range(1, retirement_years + 1):
 
         infl = inflation + 0.04 if inflation_shock and year <= 5 else inflation
         annual_expense = annual_expense_base * ((1 + infl) ** (year - 1))
         annual_gap = max(0, annual_expense - annual_pension)
 
-        # Withdraw from Bucket 1
+        # Withdraw expenses
         withdraw = min(b1, annual_gap)
         b1 -= withdraw
         annual_gap -= withdraw
 
-        # Use Bucket 2
         if annual_gap > 0 and b2 > 0:
             used = min(b2, annual_gap)
             b2 -= used
             annual_gap -= used
 
-        # Use Bucket 3
         if annual_gap > 0 and b3 > 0:
             used = min(b3, annual_gap)
             b3 -= used
             annual_gap -= used
 
-        # TRUE BUCKET REBALANCING (OPTIONAL)
-        if enable_rebalancing and b1 < target_cash:
-            required = target_cash - b1
-            from_b2 = min(b2, required)
+        # ---------------------------------
+        # SCHEDULED REFILL EVERY 3 YEARS
+        # ---------------------------------
+        if year % 3 == 0:
+            # Refill Bucket 1 from Bucket 2
+            refill_b1 = max(0, bucket1_target - b1)
+            from_b2 = min(b2, refill_b1)
             b2 -= from_b2
             b1 += from_b2
-            required -= from_b2
 
-            if required > 0:
-                from_b3 = min(b3, required)
-                b3 -= from_b3
-                b1 += from_b3
+            # Refill Bucket 2 from Bucket 3
+            target_b2 = (total_corpus - bucket1_target) * 0.50
+            refill_b2 = max(0, target_b2 - b2)
+            from_b3 = min(b3, refill_b2)
+            b3 -= from_b3
+            b2 += from_b3
 
-        # Market crash
+        # Market crash impact
         if year <= crash_duration:
             b3 *= (1 - crash_impact)
 
@@ -145,10 +140,11 @@ if run:
 
         if total <= 0 and exhaustion_age is None:
             exhaustion_age = age
-            if not enable_rebalancing:
-                exhaustion_age_no_rebal = age
             break
 
+    # ---------------------------------
+    # RESULTS
+    # ---------------------------------
     df = pd.DataFrame(
         records,
         columns=[
@@ -161,9 +157,6 @@ if run:
         ]
     )
 
-    # ---------------------------------
-    # TRAFFIC LIGHT SCORE
-    # ---------------------------------
     if exhaustion_age is None:
         status = "GREEN"
     elif exhaustion_age >= life_expectancy - 3:
@@ -171,22 +164,6 @@ if run:
     else:
         status = "RED"
 
-    # ---------------------------------
-    # RECOMMENDATION LOGIC
-    # ---------------------------------
-    avg_annual_gap = max(
-        0,
-        (df["Monthly Expense (Inflation Adjusted)"].mean() * 12) - annual_pension
-    )
-
-    additional_corpus_needed = 0
-    if exhaustion_age:
-        shortfall_years = life_expectancy - exhaustion_age
-        additional_corpus_needed = avg_annual_gap * shortfall_years
-
-    # ---------------------------------
-    # RETIREMENT HEALTH PANEL
-    # ---------------------------------
     st.subheader("🧭 Retirement Health Analysis")
 
     if status == "GREEN":
@@ -194,7 +171,7 @@ if run:
     elif status == "AMBER":
         st.warning("🟠 Retirement plan is marginally sufficient.")
     else:
-        st.error("🔴 Retirement plan is NOT sustainable under current assumptions.")
+        st.error("🔴 Retirement plan is NOT sustainable.")
 
     st.markdown(f"""
 **Summary**
@@ -203,39 +180,8 @@ if run:
 - Retirement Health Score: **{status}**
 """)
 
-    if status != "GREEN":
-        st.markdown("### What Went Wrong")
-        st.markdown("""
-- Inflation compounds for decades while pension remains fixed  
-- Early withdrawals reduce long-term compounding  
-- Market shocks accelerate depletion  
-""")
-
-        st.markdown("### How to Improve")
-        st.markdown(f"""
-- Increase retirement corpus by **~₹{additional_corpus_needed:,.0f}**
-- Delay retirement by 1–3 years
-- Enable true bucket rebalancing
-- Add inflation-protected income
-""")
-
     # ---------------------------------
-    # BUCKET STRATEGY COMPARISON
-    # ---------------------------------
-    st.subheader("🔁 Bucket Strategy Impact")
-
-    c1, c2 = st.columns(2)
-    c1.metric(
-        "Corpus Exhaustion (Without Rebalancing)",
-        exhaustion_age_no_rebal if exhaustion_age_no_rebal else "Not Exhausted"
-    )
-    c2.metric(
-        "Corpus Exhaustion (With Rebalancing)",
-        exhaustion_age if enable_rebalancing else "Enable to Compare"
-    )
-
-    # ---------------------------------
-    # OUTPUT TABLES & CHARTS
+    # OUTPUTS
     # ---------------------------------
     st.subheader("Year-wise Retirement Projection")
     st.dataframe(df, use_container_width=True)
@@ -253,29 +199,11 @@ if run:
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name="Projection", index=False)
 
-        analysis_df = pd.DataFrame({
-            "Metric": [
-                "Life Expectancy",
-                "Corpus Exhaustion Age",
-                "Retirement Health Score",
-                "Estimated Additional Corpus Required"
-            ],
-            "Value": [
-                life_expectancy,
-                exhaustion_age if exhaustion_age else "Not Exhausted",
-                status,
-                f"₹{additional_corpus_needed:,.0f}"
-            ]
-        })
-
-        analysis_df.to_excel(writer, sheet_name="Retirement Analysis", index=False)
-
     output.seek(0)
-
     st.download_button(
-        "⬇ Download Complete Retirement Report (Excel)",
+        "⬇ Download Retirement Projection (Excel)",
         output,
-        "PSU_Retirement_Analysis.xlsx",
+        "PSU_Retirement_Projection.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
