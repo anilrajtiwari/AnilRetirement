@@ -5,9 +5,9 @@ from io import BytesIO
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="Anil's Retirement Simulator", layout="wide")
-st.title("Anil's Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | Corrected & Audit-Safe Model")
+st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.title("PSU Retirement Planning Simulator")
+st.caption("Three-Bucket Strategy | Corrected, Stress-Tested & Audit-Safe")
 
 # ---------------------------------
 # INPUTS
@@ -41,6 +41,17 @@ st.sidebar.subheader("Stress Scenarios")
 crash_years = st.sidebar.selectbox("Market Crash Duration", ["No Crash", "3 Years", "5 Years"])
 inflation_shock = st.sidebar.checkbox("High Inflation (+4%) for First 5 Years After Retirement")
 
+st.sidebar.subheader("Bucket Strategy Options")
+enable_rebalancing = st.sidebar.checkbox(
+    "Enable True Bucket Rebalancing (Cash Refill)", value=False
+)
+
+cash_buffer_years = st.sidebar.slider(
+    "Cash Buffer Target (Years of Expense)",
+    1, 5, 3,
+    disabled=not enable_rebalancing
+)
+
 run = st.sidebar.button("Run Simulation")
 
 # ---------------------------------
@@ -53,6 +64,8 @@ if run:
     monthly_expense_retirement = monthly_expense_today * ((1 + inflation) ** years_to_retirement)
     annual_expense_base = monthly_expense_retirement * 12
     annual_pension = monthly_pension * 12
+
+    target_cash = annual_expense_base * cash_buffer_years
 
     st.subheader(f"At Retirement (Age {retirement_age})")
     c1, c2, c3 = st.columns(3)
@@ -75,9 +88,10 @@ if run:
 
     crash_impact = 0.15
     retirement_years = life_expectancy - retirement_age
-    records = []
 
+    records = []
     exhaustion_age = None
+    exhaustion_age_no_rebal = None
 
     for year in range(1, retirement_years + 1):
 
@@ -85,20 +99,35 @@ if run:
         annual_expense = annual_expense_base * ((1 + infl) ** (year - 1))
         annual_gap = max(0, annual_expense - annual_pension)
 
-        # Withdrawals
+        # Withdraw from Bucket 1
         withdraw = min(b1, annual_gap)
         b1 -= withdraw
         annual_gap -= withdraw
 
+        # Use Bucket 2
         if annual_gap > 0 and b2 > 0:
-            refill = min(b2, annual_gap)
-            b2 -= refill
-            annual_gap -= refill
+            used = min(b2, annual_gap)
+            b2 -= used
+            annual_gap -= used
 
+        # Use Bucket 3
         if annual_gap > 0 and b3 > 0:
-            refill = min(b3, annual_gap)
-            b3 -= refill
-            annual_gap -= refill
+            used = min(b3, annual_gap)
+            b3 -= used
+            annual_gap -= used
+
+        # TRUE BUCKET REBALANCING (OPTIONAL)
+        if enable_rebalancing and b1 < target_cash:
+            required = target_cash - b1
+            from_b2 = min(b2, required)
+            b2 -= from_b2
+            b1 += from_b2
+            required -= from_b2
+
+            if required > 0:
+                from_b3 = min(b3, required)
+                b3 -= from_b3
+                b1 += from_b3
 
         # Market crash
         if year <= crash_duration:
@@ -116,6 +145,8 @@ if run:
 
         if total <= 0 and exhaustion_age is None:
             exhaustion_age = age
+            if not enable_rebalancing:
+                exhaustion_age_no_rebal = age
             break
 
     df = pd.DataFrame(
@@ -141,7 +172,7 @@ if run:
         status = "RED"
 
     # ---------------------------------
-    # RECOMMENDATION LOGIC (DEFENSIVE)
+    # RECOMMENDATION LOGIC
     # ---------------------------------
     avg_annual_gap = max(
         0,
@@ -175,19 +206,33 @@ if run:
     if status != "GREEN":
         st.markdown("### What Went Wrong")
         st.markdown("""
-- Retirement expenses grow every year due to inflation  
-- Pension income remains fixed and loses purchasing power  
-- Corpus is drawn down faster in early retirement  
-- Market shocks reduce compounding potential  
+- Inflation compounds for decades while pension remains fixed  
+- Early withdrawals reduce long-term compounding  
+- Market shocks accelerate depletion  
 """)
 
-        st.markdown("### What You Can Do")
+        st.markdown("### How to Improve")
         st.markdown(f"""
-- Increase retirement corpus by **~₹{additional_corpus_needed:,.0f}**  
-- Delay retirement by 1–3 years to boost corpus and reduce drawdown  
-- Reduce early retirement expenses  
-- Add inflation-linked income sources  
+- Increase retirement corpus by **~₹{additional_corpus_needed:,.0f}**
+- Delay retirement by 1–3 years
+- Enable true bucket rebalancing
+- Add inflation-protected income
 """)
+
+    # ---------------------------------
+    # BUCKET STRATEGY COMPARISON
+    # ---------------------------------
+    st.subheader("🔁 Bucket Strategy Impact")
+
+    c1, c2 = st.columns(2)
+    c1.metric(
+        "Corpus Exhaustion (Without Rebalancing)",
+        exhaustion_age_no_rebal if exhaustion_age_no_rebal else "Not Exhausted"
+    )
+    c2.metric(
+        "Corpus Exhaustion (With Rebalancing)",
+        exhaustion_age if enable_rebalancing else "Enable to Compare"
+    )
 
     # ---------------------------------
     # OUTPUT TABLES & CHARTS
@@ -202,7 +247,7 @@ if run:
     st.line_chart(df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]])
 
     # ---------------------------------
-    # EXCEL DOWNLOAD (FIXED ENGINE)
+    # EXCEL DOWNLOAD
     # ---------------------------------
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
