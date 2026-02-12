@@ -3,11 +3,11 @@ import pandas as pd
 from io import BytesIO
 
 # ---------------------------------
-# PAGE SETUP
+# PAGE CONFIG
 # ---------------------------------
 st.set_page_config(page_title="Anil's Retirement Simulator", layout="wide")
 st.title("Anil's Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | Strict Hierarchy | Audit-Safe Model")
+st.caption("Three-Bucket Strategy | Stress Tested | Training Grade Model")
 
 # ---------------------------------
 # INPUTS
@@ -29,7 +29,7 @@ monthly_pension = st.sidebar.number_input(
 )
 
 total_corpus = st.sidebar.number_input(
-    "Total Retirement Corpus (₹)", 0, 100000000, 11000000, step=500000
+    "Total Retirement Corpus (₹)", 0, 200000000, 11000000, step=500000
 )
 
 st.sidebar.subheader("Expected Returns")
@@ -44,7 +44,7 @@ inflation_shock = st.sidebar.checkbox("High Inflation (+4%) for First 5 Years Af
 run = st.sidebar.button("Run Simulation")
 
 # ---------------------------------
-# SIMULATION
+# RUN SIMULATION
 # ---------------------------------
 if run:
 
@@ -56,9 +56,25 @@ if run:
     annual_expense_base = monthly_expense_retirement * 12
     annual_pension = monthly_pension * 12
 
-    # -------------------------------
+    # ---------------------------------
+    # RETIREMENT SUMMARY PANEL
+    # ---------------------------------
+    st.subheader(f"Position at Retirement (Age {retirement_age})")
+
+    monthly_gap = monthly_expense_retirement - monthly_pension
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Monthly Expense at Retirement (₹)", f"{monthly_expense_retirement:,.0f}")
+    col2.metric("Monthly Pension (₹)", f"{monthly_pension:,.0f}")
+
+    if monthly_gap > 0:
+        col3.metric("Monthly Shortfall (₹)", f"{monthly_gap:,.0f}", delta="Deficit", delta_color="inverse")
+    else:
+        col3.metric("Monthly Surplus (₹)", f"{abs(monthly_gap):,.0f}", delta="Surplus", delta_color="normal")
+
+    # ---------------------------------
     # INITIAL BUCKET STRUCTURE
-    # -------------------------------
+    # ---------------------------------
     bucket1_target = annual_expense_base * 3
     remaining = total_corpus - bucket1_target
 
@@ -76,58 +92,49 @@ if run:
     elif crash_option == "5 Years":
         crash_years = 5
 
-    crash_impact = 0.20  # 20% drop each crash year
+    crash_impact = 0.20
 
     records = []
     exhaustion_age = None
 
+    # ---------------------------------
+    # YEAR LOOP
+    # ---------------------------------
     for year in range(1, retirement_years + 1):
 
-        # Inflation shock handling
         effective_inflation = inflation
         if inflation_shock and year <= 5:
             effective_inflation += 0.04
 
         annual_expense = annual_expense_base * ((1 + effective_inflation) ** (year - 1))
 
-        # ---------------------------------
-        # NET CASHFLOW LOGIC (FIXED)
-        # ---------------------------------
+        # Net cashflow
         net_cashflow = annual_pension - annual_expense
 
         if net_cashflow >= 0:
-            # Surplus pension reinvested in Bucket 1
             b1 += net_cashflow
         else:
             annual_gap = abs(net_cashflow)
 
-            # Withdraw from Bucket 1
             withdraw_b1 = min(b1, annual_gap)
             b1 -= withdraw_b1
             annual_gap -= withdraw_b1
 
-            # If still deficit, withdraw from Bucket 2 ONLY
             if annual_gap > 0:
                 withdraw_b2 = min(b2, annual_gap)
                 b2 -= withdraw_b2
                 annual_gap -= withdraw_b2
 
-        # ---------------------------------
-        # APPLY MARKET CRASH (Bucket 3 only)
-        # ---------------------------------
+        # Market crash
         if year <= crash_years:
             b3 *= (1 - crash_impact)
 
-        # ---------------------------------
-        # APPLY RETURNS
-        # ---------------------------------
+        # Apply returns
         b1 *= (1 + r1)
         b2 *= (1 + r2)
         b3 *= (1 + r3)
 
-        # ---------------------------------
-        # REBALANCING EVERY 3 YEARS
-        # ---------------------------------
+        # Rebalancing every 3 years
         if year % 3 == 0:
 
             # Refill Bucket 1 ONLY from Bucket 2
@@ -143,7 +150,7 @@ if run:
             b3 -= transfer_from_b3
             b2 += transfer_from_b3
 
-        total_corpus_current = b1 + b2 + b3
+        total_current = b1 + b2 + b3
         age = retirement_age + year - 1
 
         records.append([
@@ -152,10 +159,10 @@ if run:
             b1,
             b2,
             b3,
-            total_corpus_current
+            total_current
         ])
 
-        if total_corpus_current <= 0 and exhaustion_age is None:
+        if total_current <= 0 and exhaustion_age is None:
             exhaustion_age = age
             break
 
@@ -178,47 +185,42 @@ if run:
     else:
         status = "RED"
 
-    # ---------------------------------
-    # ADDITIONAL CORPUS REQUIRED
-    # ---------------------------------
-    additional_corpus_needed = 0
-    if exhaustion_age:
-        remaining_years = life_expectancy - exhaustion_age
-        average_annual_gap = max(0, annual_expense_base - annual_pension)
-        additional_corpus_needed = average_annual_gap * remaining_years
-
-    # ---------------------------------
-    # DISPLAY RESULTS
-    # ---------------------------------
     st.subheader("Retirement Health Analysis")
 
     if status == "GREEN":
         st.success("🟢 Sustainable till life expectancy.")
     elif status == "AMBER":
-        st.warning("🟠 Marginally sufficient. Minor correction advised.")
+        st.warning("🟠 Marginal — Improvement Recommended.")
     else:
         st.error("🔴 Corpus exhausted before life expectancy.")
 
     st.markdown(f"""
 **Life Expectancy:** {life_expectancy}  
 **Corpus Exhaustion Age:** {exhaustion_age if exhaustion_age else "Not Exhausted"}  
-**Retirement Score:** {status}  
+**Retirement Score:** {status}
 """)
 
-    if status != "GREEN":
-        st.markdown(f"### Recommended Additional Corpus: ₹{additional_corpus_needed:,.0f}")
+    # Additional corpus recommendation
+    if exhaustion_age:
+        remaining_years = life_expectancy - exhaustion_age
+        avg_annual_gap = max(0, annual_expense_base - annual_pension)
+        additional_needed = avg_annual_gap * remaining_years
+        st.markdown(f"### Suggested Additional Corpus: ₹{additional_needed:,.0f}")
 
-    st.subheader("Year-wise Projection")
-    st.dataframe(df, use_container_width=True)
-
+    # ---------------------------------
+    # CHARTS
+    # ---------------------------------
     st.subheader("Bucket Trend")
     st.line_chart(df.set_index("Age")[["Bucket 1", "Bucket 2", "Bucket 3"]])
 
     st.subheader("Expense Trend")
     st.line_chart(df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]])
 
+    st.subheader("Year-wise Projection Table")
+    st.dataframe(df, use_container_width=True)
+
     # ---------------------------------
-    # EXCEL DOWNLOAD (OPENPYXL DEFAULT)
+    # DOWNLOAD
     # ---------------------------------
     output = BytesIO()
     df.to_excel(output, index=False)
@@ -231,4 +233,4 @@ if run:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-st.caption("For educational and training use only. Not financial advice.")
+st.caption("For training and educational purposes only. Not financial advice.")
