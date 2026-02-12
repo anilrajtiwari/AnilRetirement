@@ -5,9 +5,9 @@ from io import BytesIO
 # ---------------------------------
 # PAGE SETUP
 # ---------------------------------
-st.set_page_config(page_title="Anil's Retirement Simulator", layout="wide")
-st.title("Anil's Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | Strict 3-Year Refill Discipline")
+st.set_page_config(page_title="PSU Retirement Simulator", layout="wide")
+st.title("PSU Retirement Planning Simulator")
+st.caption("Three-Bucket Strategy | Strict Hierarchy | Audit-Safe Model")
 
 # ---------------------------------
 # INPUTS
@@ -38,126 +38,139 @@ r2 = st.sidebar.slider("Bucket 2 (Debt) Return (%)", 4.0, 8.0, 6.0) / 100
 r3 = st.sidebar.slider("Bucket 3 (Growth) Return (%)", 7.0, 12.0, 9.0) / 100
 
 st.sidebar.subheader("Stress Scenarios")
-crash_years = st.sidebar.selectbox("Market Crash Duration", ["No Crash", "3 Years", "5 Years"])
+crash_option = st.sidebar.selectbox("Market Crash Duration", ["No Crash", "3 Years", "5 Years"])
 inflation_shock = st.sidebar.checkbox("High Inflation (+4%) for First 5 Years After Retirement")
 
 run = st.sidebar.button("Run Simulation")
 
 # ---------------------------------
-# MAIN LOGIC
+# SIMULATION
 # ---------------------------------
 if run:
 
     years_to_retirement = retirement_age - current_age
+    retirement_years = life_expectancy - retirement_age
 
+    # Expense at retirement
     monthly_expense_retirement = monthly_expense_today * ((1 + inflation) ** years_to_retirement)
     annual_expense_base = monthly_expense_retirement * 12
     annual_pension = monthly_pension * 12
 
-    st.subheader(f"At Retirement (Age {retirement_age})")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Monthly Expense (₹)", f"{monthly_expense_retirement:,.0f}")
-    c2.metric("Monthly Pension (₹)", f"{monthly_pension:,.0f}")
-    c3.metric("Monthly Income Gap (₹)", f"{max(0, monthly_expense_retirement - monthly_pension):,.0f}")
-
-    # ---------------------------------
-    # INITIAL BUCKET SETUP
-    # ---------------------------------
+    # -------------------------------
+    # INITIAL BUCKET STRUCTURE
+    # -------------------------------
     bucket1_target = annual_expense_base * 3
+    remaining = total_corpus - bucket1_target
 
-    if total_corpus <= bucket1_target:
-        b1, b2, b3 = total_corpus, 0, 0
-    else:
-        b1 = bucket1_target
-        remaining = total_corpus - bucket1_target
-        b2 = remaining * 0.50
-        b3 = remaining * 0.50
+    if remaining < 0:
+        bucket1_target = total_corpus
+        remaining = 0
 
-    crash_duration = 3 if crash_years == "3 Years" else 5 if crash_years == "5 Years" else 0
-    crash_impact = 0.15
+    b1 = bucket1_target
+    b2 = remaining * 0.50
+    b3 = remaining * 0.50
 
-    retirement_years = life_expectancy - retirement_age
+    crash_years = 0
+    if crash_option == "3 Years":
+        crash_years = 3
+    elif crash_option == "5 Years":
+        crash_years = 5
+
+    crash_impact = 0.20  # 20% drop each crash year
+
     records = []
     exhaustion_age = None
 
-    # ---------------------------------
-    # SIMULATION LOOP
-    # ---------------------------------
     for year in range(1, retirement_years + 1):
 
-        infl = inflation + 0.04 if inflation_shock and year <= 5 else inflation
-        annual_expense = annual_expense_base * ((1 + infl) ** (year - 1))
-        annual_gap = max(0, annual_expense - annual_pension)
+        # Inflation shock handling
+        effective_inflation = inflation
+        if inflation_shock and year <= 5:
+            effective_inflation += 0.04
+
+        annual_expense = annual_expense_base * ((1 + effective_inflation) ** (year - 1))
 
         # ---------------------------------
-        # EXPENSE WITHDRAWAL (STRICT)
+        # NET CASHFLOW LOGIC (FIXED)
         # ---------------------------------
-        withdraw = min(b1, annual_gap)
-        b1 -= withdraw
-        annual_gap -= withdraw
+        net_cashflow = annual_pension - annual_expense
 
-        if annual_gap > 0 and b2 > 0:
-            used = min(b2, annual_gap)
-            b2 -= used
-            annual_gap -= used
+        if net_cashflow >= 0:
+            # Surplus pension reinvested in Bucket 1
+            b1 += net_cashflow
+        else:
+            annual_gap = abs(net_cashflow)
 
-        # ❌ Bucket 3 NEVER used for expenses
+            # Withdraw from Bucket 1
+            withdraw_b1 = min(b1, annual_gap)
+            b1 -= withdraw_b1
+            annual_gap -= withdraw_b1
 
-        # ---------------------------------
-        # SCHEDULED REFILL EVERY 3 YEARS
-        # ---------------------------------
-        if year % 3 == 0:
-
-            # Refill Bucket 1 ONLY from Bucket 2
-            refill_b1 = max(0, bucket1_target - b1)
-            from_b2 = min(b2, refill_b1)
-            b2 -= from_b2
-            b1 += from_b2
-
-            # Refill Bucket 2 ONLY from Bucket 3
-            target_b2 = (total_corpus - bucket1_target) * 0.50
-            refill_b2 = max(0, target_b2 - b2)
-            from_b3 = min(b3, refill_b2)
-            b3 -= from_b3
-            b2 += from_b3
+            # If still deficit, withdraw from Bucket 2 ONLY
+            if annual_gap > 0:
+                withdraw_b2 = min(b2, annual_gap)
+                b2 -= withdraw_b2
+                annual_gap -= withdraw_b2
 
         # ---------------------------------
-        # MARKET CRASH (ONLY BUCKET 3)
+        # APPLY MARKET CRASH (Bucket 3 only)
         # ---------------------------------
-        if year <= crash_duration:
+        if year <= crash_years:
             b3 *= (1 - crash_impact)
 
         # ---------------------------------
-        # ANNUAL RETURNS
+        # APPLY RETURNS
         # ---------------------------------
         b1 *= (1 + r1)
         b2 *= (1 + r2)
         b3 *= (1 + r3)
 
-        total = b1 + b2 + b3
+        # ---------------------------------
+        # REBALANCING EVERY 3 YEARS
+        # ---------------------------------
+        if year % 3 == 0:
+
+            # Refill Bucket 1 ONLY from Bucket 2
+            refill_b1 = max(0, bucket1_target - b1)
+            transfer_from_b2 = min(b2, refill_b1)
+            b2 -= transfer_from_b2
+            b1 += transfer_from_b2
+
+            # Refill Bucket 2 ONLY from Bucket 3
+            desired_b2 = (b2 + b3) * 0.50
+            refill_b2 = max(0, desired_b2 - b2)
+            transfer_from_b3 = min(b3, refill_b2)
+            b3 -= transfer_from_b3
+            b2 += transfer_from_b3
+
+        total_corpus_current = b1 + b2 + b3
         age = retirement_age + year - 1
 
-        records.append([age, annual_expense / 12, b1, b2, b3, total])
+        records.append([
+            age,
+            annual_expense / 12,
+            b1,
+            b2,
+            b3,
+            total_corpus_current
+        ])
 
-        if total <= 0 and exhaustion_age is None:
+        if total_corpus_current <= 0 and exhaustion_age is None:
             exhaustion_age = age
             break
 
-    # ---------------------------------
-    # RESULTS
-    # ---------------------------------
-    df = pd.DataFrame(
-        records,
-        columns=[
-            "Age",
-            "Monthly Expense (Inflation Adjusted)",
-            "Bucket 1",
-            "Bucket 2",
-            "Bucket 3",
-            "Total Corpus"
-        ]
-    )
+    df = pd.DataFrame(records, columns=[
+        "Age",
+        "Monthly Expense (Inflation Adjusted)",
+        "Bucket 1",
+        "Bucket 2",
+        "Bucket 3",
+        "Total Corpus"
+    ])
 
+    # ---------------------------------
+    # RETIREMENT SCORE
+    # ---------------------------------
     if exhaustion_age is None:
         status = "GREEN"
     elif exhaustion_age >= life_expectancy - 3:
@@ -165,47 +178,57 @@ if run:
     else:
         status = "RED"
 
-    st.subheader("🧭 Retirement Health Analysis")
+    # ---------------------------------
+    # ADDITIONAL CORPUS REQUIRED
+    # ---------------------------------
+    additional_corpus_needed = 0
+    if exhaustion_age:
+        remaining_years = life_expectancy - exhaustion_age
+        average_annual_gap = max(0, annual_expense_base - annual_pension)
+        additional_corpus_needed = average_annual_gap * remaining_years
+
+    # ---------------------------------
+    # DISPLAY RESULTS
+    # ---------------------------------
+    st.subheader("Retirement Health Analysis")
 
     if status == "GREEN":
-        st.success("🟢 Retirement plan is sustainable till life expectancy.")
+        st.success("🟢 Sustainable till life expectancy.")
     elif status == "AMBER":
-        st.warning("🟠 Retirement plan is marginally sufficient.")
+        st.warning("🟠 Marginally sufficient. Minor correction advised.")
     else:
-        st.error("🔴 Retirement plan is NOT sustainable.")
+        st.error("🔴 Corpus exhausted before life expectancy.")
 
     st.markdown(f"""
-**Summary**
-- Life Expectancy: **{life_expectancy}**
-- Corpus Exhaustion Age: **{exhaustion_age if exhaustion_age else 'Not Exhausted'}**
-- Retirement Health Score: **{status}**
+**Life Expectancy:** {life_expectancy}  
+**Corpus Exhaustion Age:** {exhaustion_age if exhaustion_age else "Not Exhausted"}  
+**Retirement Score:** {status}  
 """)
 
-    # ---------------------------------
-    # OUTPUTS
-    # ---------------------------------
-    st.subheader("Year-wise Retirement Projection")
+    if status != "GREEN":
+        st.markdown(f"### Recommended Additional Corpus: ₹{additional_corpus_needed:,.0f}")
+
+    st.subheader("Year-wise Projection")
     st.dataframe(df, use_container_width=True)
 
-    st.subheader("Bucket-wise Corpus Trend")
+    st.subheader("Bucket Trend")
     st.line_chart(df.set_index("Age")[["Bucket 1", "Bucket 2", "Bucket 3"]])
 
-    st.subheader("Inflation-Adjusted Monthly Expense Trend")
+    st.subheader("Expense Trend")
     st.line_chart(df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]])
 
     # ---------------------------------
-    # EXCEL DOWNLOAD
+    # EXCEL DOWNLOAD (OPENPYXL DEFAULT)
     # ---------------------------------
     output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Projection", index=False)
-
+    df.to_excel(output, index=False)
     output.seek(0)
+
     st.download_button(
-        "⬇ Download Retirement Projection (Excel)",
+        "Download Projection (Excel)",
         output,
         "PSU_Retirement_Projection.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-st.caption("For education and capacity building only. Not financial advice.")
+st.caption("For educational and training use only. Not financial advice.")
