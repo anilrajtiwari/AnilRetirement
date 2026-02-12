@@ -7,7 +7,7 @@ from io import BytesIO
 # ---------------------------------
 st.set_page_config(page_title="Anil's Retirement Simulator", layout="wide")
 st.title("Anil's Retirement Planning Simulator")
-st.caption("Three-Bucket Strategy | Stress Tested | Training Grade Model")
+st.caption("Three-Bucket Strategy | Strict Discipline | Stress-Tested")
 
 # ---------------------------------
 # INPUTS
@@ -51,7 +51,6 @@ if run:
     years_to_retirement = retirement_age - current_age
     retirement_years = life_expectancy - retirement_age
 
-    # Expense at retirement
     monthly_expense_retirement = monthly_expense_today * ((1 + inflation) ** years_to_retirement)
     annual_expense_base = monthly_expense_retirement * 12
     annual_pension = monthly_pension * 12
@@ -108,7 +107,6 @@ if run:
 
         annual_expense = annual_expense_base * ((1 + effective_inflation) ** (year - 1))
 
-        # Net cashflow
         net_cashflow = annual_pension - annual_expense
 
         if net_cashflow >= 0:
@@ -125,7 +123,7 @@ if run:
                 b2 -= withdraw_b2
                 annual_gap -= withdraw_b2
 
-        # Market crash
+        # Market crash affects Bucket 3 only
         if year <= crash_years:
             b3 *= (1 - crash_impact)
 
@@ -200,7 +198,19 @@ if run:
 **Retirement Score:** {status}
 """)
 
-    # Additional corpus recommendation
+    # ---------------------------------
+    # CORPUS REMAINING AT END
+    # ---------------------------------
+    if exhaustion_age is None:
+        corpus_at_end = df["Total Corpus"].iloc[-1]
+    else:
+        corpus_at_end = 0
+
+    st.markdown(f"### Corpus Remaining at Age {life_expectancy}: ₹{corpus_at_end:,.0f}")
+
+    # ---------------------------------
+    # ADDITIONAL CORPUS RECOMMENDATION
+    # ---------------------------------
     if exhaustion_age:
         remaining_years = life_expectancy - exhaustion_age
         avg_annual_gap = max(0, annual_expense_base - annual_pension)
@@ -208,7 +218,7 @@ if run:
         st.markdown(f"### Suggested Additional Corpus: ₹{additional_needed:,.0f}")
 
     # ---------------------------------
-    # CHARTS
+    # VISUALS
     # ---------------------------------
     st.subheader("Bucket Trend")
     st.line_chart(df.set_index("Age")[["Bucket 1", "Bucket 2", "Bucket 3"]])
@@ -216,7 +226,7 @@ if run:
     st.subheader("Expense Trend")
     st.line_chart(df.set_index("Age")[["Monthly Expense (Inflation Adjusted)"]])
 
-    st.subheader("Year-wise Projection Table")
+    st.subheader("Year-wise Projection")
     st.dataframe(df, use_container_width=True)
 
     # ---------------------------------
